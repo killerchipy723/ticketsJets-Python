@@ -59,7 +59,7 @@ def modificar_cantidad(nombre, cambio):
             del carrito[nombre]
     actualizar_interfaz_carrito()
 
-def obtener_total_carrito():
+def obtener_total_carrito(): 
     return sum(item["precio"] * item["cantidad"] for item in carrito.values())
 
 def actualizar_interfaz_carrito():
