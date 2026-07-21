@@ -339,7 +339,13 @@ btn_cobrar.pack(fill="x", ipady=12)
 # Inicialización
 # ==========================
 
-actualizar_reloj()
-actualizar_interfaz_carrito()
 
-ventana.mainloop()
+
+def iniciar_sistema():
+    actualizar_reloj()
+    actualizar_interfaz_carrito()
+    ventana.mainloop()
+
+
+if __name__ == "__main__":
+    iniciar_sistema()

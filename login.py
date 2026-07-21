@@ -1,15 +1,29 @@
 import tkinter as tk
 from tkinter import messagebox
+from database.usuarios import iniciar_sesion
+import subprocess
+import sys
 
 def validar_login():
-    usuario = entry_usuario.get()
-    password = entry_password.get()
 
-    if usuario == "admin" and password == "1234":
-        messagebox.showinfo("TicketsJets", "¡Inicio de sesión exitoso!")
+    usuario = entry_usuario.get().strip()
+    password = entry_password.get().strip()
+
+    datos = iniciar_sesion(usuario, password)
+
+    if datos:
+
+        ventana.destroy()   # Cierra el login
+
+        # Abre el sistema principal
+        subprocess.Popen([sys.executable, "main.py"])
+
     else:
-        messagebox.showerror("Error", "Usuario o contraseña incorrectos")
 
+        messagebox.showerror(
+            "Error",
+            "Usuario o contraseña incorrectos"
+        )
 # Configuración de la ventana principal
 ventana = tk.Tk()
 ventana.title("TicketsJets - Login")
