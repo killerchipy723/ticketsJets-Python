@@ -1,7 +1,7 @@
 import pymysql
 from database.conexion import conectar
 
-def iniciar_sesion(usuario, password):
+def productos():
 
     conexion = conectar()
 
@@ -10,17 +10,14 @@ def iniciar_sesion(usuario, password):
 
     sql = """
         SELECT *
-        FROM usuarios
-        WHERE nombre=%s
-        AND clave=%s
-        AND estado='Activo'
+        FROM productos
     """
 
-    cursor.execute(sql, (usuario, password))
+    cursor.execute(sql)
 
-    datos = cursor.fetchone()
+    prod = cursor.fetchall()
 
     cursor.close()
     conexion.close()
 
-    return datos
+    return prod

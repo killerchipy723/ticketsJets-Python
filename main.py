@@ -1,41 +1,29 @@
 import tkinter as tk
 from tkinter import messagebox, ttk
 from datetime import datetime
+from database.productos import productos
+from database.usuarios import iniciar_sesion
+from sesion import Sesion
+
+jornada_activa = "Noche Viernes"
+estado_caja = "ABIERTA"
+estado_servidor = "ONLINE"
+numero_caja = "Caja 1"
+
+
+
 
 # --- Variables Globales de Simulación ---
-usuario_activo = "Claudio Admin"
+usuario_activo = Sesion.nombre()
+print(Sesion.nombre())
 punto_venta = "Caja 1"
 recaudacion_total = 0.0
 carrito = {}
 
+
+
 # Productos de ejemplo (Matriz de Bebidas para el panel de 5x5)
-productos_bebidas = [
-    {"nombre": "Coca-Cola 500ml", "precio": 1500},
-    {"nombre": "Pepsi 500ml", "precio": 1400},
-    {"nombre": "Agua Mineral 600ml", "precio": 1100},
-    {"nombre": "Fanta Naranja", "precio": 1450},
-    {"nombre": "Sprite Lima", "precio": 1450},
-    {"nombre": "Cerveza Corona", "precio": 2500},
-    {"nombre": "Heineken Lata", "precio": 2200},
-    {"nombre": "Energizante RedBull", "precio": 3000},
-    {"nombre": "Jugo de Naranja", "precio": 1300},
-    {"nombre": "Agua Tónica", "precio": 1200},
-    {"nombre": "Gatorade Frutos", "precio": 1800},
-    {"nombre": "Té Frío Limón", "precio": 1500},
-    {"nombre": "Fernet Branca", "precio": 5500},
-    {"nombre": "Vodka Absolut", "precio": 7000},
-    {"nombre": "Ron Blanco", "precio": 4800},
-    {"nombre": "Agua con Gas", "precio": 1100},
-    {"nombre": "Limonada Menta", "precio": 1600},
-    {"nombre": "Pisco Especial", "precio": 6000},
-    {"nombre": "Vino Tinto Tinto", "precio": 3500},
-    {"nombre": "Champagne Brut", "precio": 9000},
-    {"nombre": "Jugo Multifruta", "precio": 1300},
-    {"nombre": "Cerveza IPALata", "precio": 2400},
-    {"nombre": "Agua Saborizada", "precio": 1250},
-    {"nombre": "Licor de Café", "precio": 4000},
-    {"nombre": "Malta Tostada", "precio": 1700}
-]
+productos_bebidas = productos();
 
 # --- Lógica de la Aplicación ---
 def actualizar_reloj():
@@ -45,7 +33,7 @@ def actualizar_reloj():
 
 def agregar_al_carrito(producto):
     nombre = producto["nombre"]
-    precio = producto["precio"]
+    precio = producto["importe"]
     if nombre in carrito:
         carrito[nombre]["cantidad"] += 1
     else:
@@ -59,7 +47,7 @@ def modificar_cantidad(nombre, cambio):
             del carrito[nombre]
     actualizar_interfaz_carrito()
 
-def obtener_total_carrito(): 
+def obtener_total_carrito():
     return sum(item["precio"] * item["cantidad"] for item in carrito.values())
 
 def actualizar_interfaz_carrito():
@@ -117,54 +105,146 @@ def salir_quiosco(event=None):
     if messagebox.askyesno("TicketsJets", "¿Desea cerrar el sistema de quiosco?"):
         ventana.destroy()
 
-# --- Configuración de la Ventana en Pantalla Completa ---
-ventana = tk.Tk()
-ventana.title("TicketsJets - Módulo Quiosco de Ventas")
-ventana.attributes("-fullscreen", True)
-ventana.config(bg="#11111b")
+# --------------------------------------------------
+# CONFIGURACIÓN PRINCIPAL
+# --------------------------------------------------
 
-# Combinación de teclas de escape de emergencia (Esc) para salir de pantalla completa
+ventana = tk.Tk()
+ventana.title("TicketsJets - Módulo Quiosco")
+ventana.attributes("-fullscreen", True)
+ventana.configure(bg="#11111b")
+
 ventana.bind("<Escape>", salir_quiosco)
 
-# Paleta Estilo Bootstrap y Login
-COLOR_HEADER_BG = "#8d1324"  # Rojo Marfil original del Login
-COLOR_MAIN_BG = "#11111b"    # Negro Bootstrap Dark fondo
-COLOR_CARD_BG = "#212529"    # Gris oscuro componentes
+# Atajos (más adelante agregaremos la funcionalidad)
+ventana.bind("<F2>", lambda e: procesar_cobro())
+
+# --------------------------------------------------
+# COLORES
+# --------------------------------------------------
+
+COLOR_HEADER_BG = "#8d1324"
+COLOR_TOOLBAR = "#1b1f23"
+COLOR_MAIN_BG = "#11111b"
+COLOR_CARD_BG = "#212529"
+
 TEXT_LIGHT = "#f8f9fa"
+
 BTN_PRIMARY = "#0d6efd"
+BTN_SUCCESS = "#198754"
+BTN_DANGER = "#dc3545"
 
-# ==================== ENCABEZADO (HEADER) ====================
-header = tk.Frame(ventana, bg=COLOR_HEADER_BG, height=80, padx=20)
-header.pack(fill="x", side="top")
-header.pack_propagate(False)  
+# --------------------------------------------------
+# CONTENEDOR PRINCIPAL
+# --------------------------------------------------
 
-# Título de Marca Izquierda
-lbl_marca = tk.Label(header, text="TicketsJets  🚀", font=("Segoe UI", 22, "bold"), fg=TEXT_LIGHT, bg=COLOR_HEADER_BG)
-lbl_marca.pack(side="left", pady=10)
+main_container = tk.Frame(
+    ventana,
+    bg=COLOR_MAIN_BG
+)
 
-lbl_pos = tk.Label(header, text=f"Punto: {punto_venta}  |  Operador: {usuario_activo}", font=("Segoe UI", 12), fg="#f8f9fa", bg=COLOR_HEADER_BG)
+main_container.pack(fill="both", expand=True)
 
-lbl_pos.pack(side="left", padx=40, pady=22)
+# --------------------------------------------------
+# HEADER
+# --------------------------------------------------
 
-# Salida / Cerrar Quiosco Derecha
-btn_salir = tk.Button(header, text="Cerrar Sistema [ESC]", font=("Segoe UI", 10, "bold"), bg="#dc3545", fg=TEXT_LIGHT, bd=0, padx=15, cursor="hand2", command=salir_quiosco)
-btn_salir.pack(side="right", pady=20)
+header = tk.Frame(
+    main_container,
+    bg=COLOR_HEADER_BG,
+    height=80
+)
 
-# Fecha y Hora Central/Derecha
-lbl_reloj = tk.Label(header, text="", font=("Segoe UI", 14, "bold"), fg=TEXT_LIGHT, bg=COLOR_HEADER_BG)
-lbl_reloj.pack(side="right", padx=30, pady=20)
+header.pack(fill="x")
+header.pack_propagate(False)
 
-# Indicador de Recaudación en el Encabezado
-frame_recaudacion = tk.Frame(header, bg="#510a14", padx=15, pady=5)
-frame_recaudacion.pack(side="right", padx=10, pady=15)
-lbl_recaudacion_txt = tk.Label(frame_recaudacion, text="RECAUDACIÓN CAJA:", font=("Segoe UI", 9, "bold"), fg="#adb5bd", bg="#510a14")
-lbl_recaudacion_txt.pack(side="top", anchor="w")
-lbl_recaudacion_val = tk.Label(frame_recaudacion, text="$0.00", font=("Segoe UI", 14, "bold"), fg="#a6e3a1", bg="#510a14")
-lbl_recaudacion_val.pack(side="top", anchor="w")
+# Logo
 
+lbl_marca = tk.Label(
+    header,
+    text="🚀 TicketsJets",
+    font=("Segoe UI",22,"bold"),
+    bg=COLOR_HEADER_BG,
+    fg="white"
+)
+
+lbl_marca.pack(side="left", padx=20)
+
+# Usuario
+
+lbl_pos = tk.Label(
+    header,
+    text=f"Punto: {punto_venta}   |   Operador: {usuario_activo}",
+    font=("Segoe UI",11),
+    bg=COLOR_HEADER_BG,
+    fg="white"
+)
+
+lbl_pos.pack(side="left", padx=25)
+
+# Recaudación
+
+frame_recaudacion = tk.Frame(
+    header,
+    bg="#5a101b",
+    padx=15,
+    pady=6
+)
+
+frame_recaudacion.pack(side="right", padx=15)
+
+tk.Label(
+    frame_recaudacion,
+    text="RECAUDACIÓN",
+    font=("Segoe UI",9,"bold"),
+    bg="#5a101b",
+    fg="#adb5bd"
+).pack(anchor="w")
+
+lbl_recaudacion_val = tk.Label(
+    frame_recaudacion,
+    text="$0.00",
+    font=("Segoe UI",15,"bold"),
+    bg="#5a101b",
+    fg="#8be28b"
+)
+
+lbl_recaudacion_val.pack(anchor="w")
+
+# Hora
+
+lbl_reloj = tk.Label(
+    header,
+    text="",
+    font=("Segoe UI",13,"bold"),
+    bg=COLOR_HEADER_BG,
+    fg="white"
+)
+
+lbl_reloj.pack(side="right", padx=20)
+
+# Salir
+
+btn_salir = tk.Button(
+    header,
+    text="❌ Cerrar Sistema",
+    font=("Segoe UI",10,"bold"),
+    bg=BTN_DANGER,
+    fg="white",
+    bd=0,
+    padx=15,
+    cursor="hand2",
+    command=salir_quiosco
+)
+
+btn_salir.pack(side="right", padx=15)
+
+# --------------------------------------------------
+# CUERPO
+# --------------------------------------------------
 
 # ==================== CUERPO PRINCIPAL ====================
-cuerpo = tk.Frame(ventana, bg=COLOR_MAIN_BG, padx=15, pady=15)
+cuerpo = tk.Frame(main_container, bg=COLOR_MAIN_BG, padx=15, pady=15)
 cuerpo.pack(fill="both", expand=True)
 
 # --- PANEL IZQUIERDO: MATRIZ DE CARDS 5x5 (PRODUCTOS) ---
@@ -174,9 +254,11 @@ panel_izquierdo.pack(side="left", fill="both", expand=True, padx=(0, 15))
 lbl_sec_bebidas = tk.Label(panel_izquierdo, text="Catálogo de Bebidas Disponibles", font=("Segoe UI", 16, "bold"), fg=TEXT_LIGHT, bg=COLOR_MAIN_BG, anchor="w")
 lbl_sec_bebidas.pack(fill="x", pady=(0, 10))
 
-# Contenedor Grid adaptable para simular las 5 columnas por 5 filas
+
+
+# Contenedor Grid adaptable para simular las 5 columnas por 5 filas (toma todo el espacio restante)
 grid_productos = tk.Frame(panel_izquierdo, bg=COLOR_MAIN_BG)
-grid_productos.pack(fill="both", expand=True)
+grid_productos.pack(side="top", fill="both", expand=True)
 
 # Forzar configuración exacta de 5 columnas equidistantes
 for col in range(5):
@@ -184,26 +266,55 @@ for col in range(5):
 for fila in range(5):
     grid_productos.rowconfigure(fila, weight=1, uniform="grupo_bebidas")
 
-# Inyección dinámica de las Cards estilo Bootstrap
+# Inyección dinámica de las Cards estilo Bootstrap (Ahora toda la Card es interactiva y más compacta)
 for indice, prod in enumerate(productos_bebidas):
     if indice >= 25: break # Limitar estrictamente al espacio de 5x5
     
     fila = indice // 5
     columna = indice % 5
     
-    # Crear contenedor individual de la Card
-    card = tk.Frame(grid_productos, bg=COLOR_CARD_BG, highlightbackground="#313244", highlightthickness=1)
-    card.grid(row=fila, column=columna, padx=6, pady=6, sticky="nsew")
+    # Contenedor individual de la Card (más compacto)
+    card = tk.Frame(
+        grid_productos, 
+        bg=COLOR_CARD_BG, 
+        highlightbackground="#313244", 
+        highlightthickness=1,
+        cursor="hand2"
+    )
+    card.grid(row=fila, column=columna, padx=4, pady=4, sticky="nsew")
     
-    # Textos internos de la Card
-    lbl_pname = tk.Label(card, text=prod["nombre"], font=("Segoe UI", 11, "bold"), fg=TEXT_LIGHT, bg=COLOR_CARD_BG, wraplength=120, justify="center")
-    lbl_pname.pack(expand=True, fill="x", pady=(10, 2))
+    # Texto del Nombre (fuente un punto más chica y wraplength ajustado)
+    lbl_pname = tk.Label(
+        card, 
+        text=prod["nombre"], 
+        font=("Segoe UI", 10, "bold"), 
+        fg=TEXT_LIGHT, 
+        bg=COLOR_CARD_BG, 
+        wraplength=100, 
+        justify="center",
+        cursor="hand2"
+    )
+    lbl_pname.pack(expand=True, fill="both", padx=4, pady=(6, 2))
     
-    lbl_pprice = tk.Label(card, text=f"${prod['precio']}", font=("Segoe UI", 12), fg="#a6e3a1", bg=COLOR_CARD_BG)
-    lbl_pprice.pack(expand=True, fill="x", pady=(0, 5))
+    # Texto del Precio
+    lbl_pprice = tk.Label(
+        card, 
+        text=f"${prod['importe']}", 
+        font=("Segoe UI", 11, "bold"), 
+        fg="#a6e3a1", 
+        bg=COLOR_CARD_BG,
+        cursor="hand2"
+    )
+    lbl_pprice.pack(expand=True, fill="both", padx=4, pady=(0, 6))
     
-    btn_add = tk.Button(card, text="Agregar", font=("Segoe UI", 9, "bold"), bg="#313244", fg=TEXT_LIGHT, bd=0, activebackground=BTN_PRIMARY, cursor="hand2", command=lambda p=prod: agregar_al_carrito(p))
-    btn_add.pack(fill="x", side="bottom", ipady=4)
+    # Función handler para capturar el click del producto específico
+    def on_card_click(event, p=prod):
+        agregar_al_carrito(p)
+        
+    # Vincular evento de click a la card y a todos sus hijos para que responda en cualquier parte
+    card.bind("<Button-1>", on_card_click)
+    lbl_pname.bind("<Button-1>", on_card_click)
+    lbl_pprice.bind("<Button-1>", on_card_click)
 
 
 # --- PANEL DERECHO: CARRITO Y CONFIGURACIÓN DE PAGO ---
@@ -335,17 +446,133 @@ btn_cobrar = tk.Button(
 )
 btn_cobrar.pack(fill="x", ipady=12)
 
+# ==========================================================
+# BARRA DE ESTADO PROFESIONAL
+# ==========================================================
+
+status_bar = tk.Frame(
+    ventana,
+    bg="#212529",
+    height=52,
+    highlightbackground="#343a40",
+    highlightthickness=1
+)
+
+status_bar.pack(side="bottom", fill="x")
+status_bar.pack_propagate(False)
+
+# ---------- Información izquierda ----------
+
+lbl_estado = tk.Label(
+    status_bar,
+    text=f"🟢 Caja: {estado_caja}",
+    bg="#212529",
+    fg="#20c997",
+    font=("Segoe UI",10,"bold")
+)
+lbl_estado.pack(side="left", padx=(15,10))
+
+lbl_jornada = tk.Label(
+    status_bar,
+    text=f"📅 Jornada: {jornada_activa}",
+    bg="#212529",
+    fg="white",
+    font=("Segoe UI",10)
+)
+lbl_jornada.pack(side="left", padx=10)
+
+lbl_usuario_bar = tk.Label(
+    status_bar,
+    text=f"👤 {usuario_activo}",
+    bg="#212529",
+    fg="white",
+    font=("Segoe UI",10)
+)
+lbl_usuario_bar.pack(side="left", padx=10)
+
+lbl_caja = tk.Label(
+    status_bar,
+    text=f"🏦 {numero_caja}",
+    bg="#212529",
+    fg="white",
+    font=("Segoe UI",10)
+)
+lbl_caja.pack(side="left", padx=10)
+
+lbl_servidor = tk.Label(
+    status_bar,
+    text="🟢 Servidor Online",
+    bg="#212529",
+    fg="#20c997",
+    font=("Segoe UI",10,"bold")
+)
+lbl_servidor.pack(side="left", padx=10)
+
+# ---------- Atajos ----------
+
+frame_atajos = tk.Frame(status_bar,bg="#212529")
+frame_atajos.pack(side="left", padx=40)
+
+tk.Label(
+    frame_atajos,
+    text="F2 Cobrar",
+    bg="#212529",
+    fg="#adb5bd",
+    font=("Segoe UI",9)
+).pack(side="left", padx=6)
+
+tk.Label(
+    frame_atajos,
+    text="F3 Buscar",
+    bg="#212529",
+    fg="#adb5bd",
+    font=("Segoe UI",9)
+).pack(side="left", padx=6)
+
+tk.Label(
+    frame_atajos,
+    text="F4 Entradas",
+    bg="#212529",
+    fg="#adb5bd",
+    font=("Segoe UI",9)
+).pack(side="left", padx=6)
+
+tk.Label(
+    frame_atajos,
+    text="ESC Salir",
+    bg="#212529",
+    fg="#adb5bd",
+    font=("Segoe UI",9)
+).pack(side="left", padx=6)
+
+# ---------- Botones ----------
+
+frame_botones_estado = tk.Frame(
+    status_bar,
+    bg="#212529"
+)
+frame_botones_estado.pack(side="right", padx=15)
+
+btn_cerrar_caja = tk.Button(
+    frame_botones_estado,
+    text="🔒 Cerrar Caja",
+    bg="#dc3545",
+    fg="white",
+    font=("Segoe UI",10,"bold"),
+    bd=0,
+    cursor="hand2",
+    padx=20
+)
+btn_cerrar_caja.pack(side="right")
+
 # ==========================
 # Inicialización
 # ==========================
-
-
 
 def iniciar_sistema():
     actualizar_reloj()
     actualizar_interfaz_carrito()
     ventana.mainloop()
-
 
 if __name__ == "__main__":
     iniciar_sistema()

@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import messagebox
 from database.usuarios import iniciar_sesion
+from sesion import Sesion
 import subprocess
 import sys
 
@@ -12,11 +13,17 @@ def validar_login():
     datos = iniciar_sesion(usuario, password)
 
     if datos:
+     
 
-        ventana.destroy()   # Cierra el login
+        # Guardar la sesión
+     Sesion.iniciar(datos)
 
-        # Abre el sistema principal
-        subprocess.Popen([sys.executable, "main.py"])
+    # Cerrar login
+     ventana.destroy()
+
+    # Importar y abrir el sistema principal
+     import main
+     main.iniciar_sistema()
 
     else:
 
