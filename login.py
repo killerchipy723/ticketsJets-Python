@@ -10,10 +10,19 @@ def validar_login():
     usuario = entry_usuario.get().strip()
     password = entry_password.get().strip()
 
-    datos = iniciar_sesion(usuario, password)
+    if not usuario or not password:
+        messagebox.showwarning("Atención", "Por favor complete todos los campos.")
+        return
+
+    # Obtener los datos de la sesión y el mensaje de error si ocurriera alguno
+    datos, error = iniciar_sesion(usuario, password)
+
+    if error:
+        messagebox.showerror("Error de Autenticación", error)
+        return
 
     if datos:
-        # 1. Guardar la sesión activa
+        # 1. Guardar la sesión activa con todos los atributos (id, idpunto, idjornada, mac, etc.)
         Sesion.iniciar(datos)
 
         # 2. Obtener el rol estandarizado en minúsculas
@@ -30,13 +39,6 @@ def validar_login():
         else:
             import main
             main.iniciar_sistema()
-
-    else:
-        messagebox.showerror(
-            "Error",
-            "Usuario o contraseña incorrectos"
-        )
-
 
 # ==========================================================
 # CONSTRUCCIÓN DE LA INTERFAZ GRÁFICA

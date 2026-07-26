@@ -1,38 +1,36 @@
+# main.py
 import os
 import tkinter as tk
 from datetime import datetime
 from tkinter import messagebox, ttk
+import subprocess
 
-from database.productos import productos
-from database.usuarios import iniciar_sesion
-from sesion import Sesion
+from database.ventas import (
+    agregar_al_carrito,
+    carrito,
+    modificar_cantidad,
+    obtener_datos_sesion_actual,
+    obtener_modos_pago,
+    obtener_productos,
+    obtener_recaudacion_acumulada_jornada,
+    obtener_total_carrito,
+    registrar_venta,
+)
 
-# --- Variables Globales de Simulación ---
-jornada_activa = "Noche Viernes"
-estado_caja = "ABIERTA"
-estado_servidor = "ONLINE"
-numero_caja = "Caja 1"
-punto_venta = "Caja 1"
-
-recaudacion_total = 0.0
-carrito = {}
-
-# Declaración de referencias globales para Tkinter
+# Referencias globales UI
 ventana = None
 lbl_reloj = None
 lbl_total_num = None
 lbl_recaudacion_val = None
 frame_lista_carrito = None
-var_efectivo = None
-var_tarjeta = None
-var_transferencia = None
 
-# Productos de ejemplo
-productos_bebidas = productos()
+# Cargar catálogo de productos
+productos_bebidas = obtener_productos()
 
 
-# --- Lógica de la Aplicación ---
-
+# ==========================================================
+# FUNCIONES REFRESCO DE INTERFAZ
+# ==========================================================
 
 def actualizar_reloj():
     if ventana and ventana.winfo_exists():
@@ -41,33 +39,17 @@ def actualizar_reloj():
         ventana.after(1000, actualizar_reloj)
 
 
-def agregar_al_carrito(producto):
-    nombre = producto["nombre"]
-    precio = producto["importe"]
-    if nombre in carrito:
-        carrito[nombre]["cantidad"] += 1
-    else:
-        carrito[nombre] = {"precio": precio, "cantidad": 1}
-    actualizar_interfaz_carrito()
-
-
-def modificar_cantidad(nombre, cambio):
-    if nombre in carrito:
-        carrito[nombre]["cantidad"] += cambio
-        if carrito[nombre]["cantidad"] <= 0:
-            del carrito[nombre]
-    actualizar_interfaz_carrito()
-
-
-def obtener_total_carrito():
-    return sum(item["precio"] * item["cantidad"] for item in carrito.values())
+def actualizar_recaudacion_ui():
+    """Consulta a la base de datos el acumulado real de la jornada."""
+    if lbl_recaudacion_val:
+        monto_acumulado = obtener_recaudacion_acumulada_jornada()
+        lbl_recaudacion_val.config(text=f"${monto_acumulado:,.2f}")
 
 
 def actualizar_interfaz_carrito():
     if not frame_lista_carrito:
         return
 
-    # Limpiar lista visual
     for widget in frame_lista_carrito.winfo_children():
         widget.destroy()
 
@@ -87,7 +69,7 @@ def actualizar_interfaz_carrito():
 
         lbl_subtotal = tk.Label(
             item_frame,
-            text=f"${datos['precio']*datos['cantidad']}",
+            text=f"${datos['precio']*datos['cantidad']:,.2f}",
             fg="#adb5bd",
             bg="#212529",
             font=("Segoe UI", 10, "bold"),
@@ -102,7 +84,8 @@ def actualizar_interfaz_carrito():
             fg="white",
             bd=0,
             width=2,
-            command=lambda n=nombre: modificar_cantidad(n, -1),
+            cursor="hand2",
+            command=lambda n=nombre: [modificar_cantidad(n, -1), actualizar_interfaz_carrito()],
         )
         btn_menos.pack(side="right", padx=2)
 
@@ -114,7 +97,8 @@ def actualizar_interfaz_carrito():
             fg="white",
             bd=0,
             width=2,
-            command=lambda n=nombre: modificar_cantidad(n, 1),
+            cursor="hand2",
+            command=lambda n=nombre: [modificar_cantidad(n, 1), actualizar_interfaz_carrito()],
         )
         btn_mas.pack(side="right", padx=2)
 
@@ -122,113 +106,227 @@ def actualizar_interfaz_carrito():
         lbl_total_num.config(text=f"${obtener_total_carrito():,.2f}")
 
 
-def procesar_cobro():
-    global recaudacion_total
-    total = obtener_total_carrito()
-    if total == 0:
-        messagebox.showwarning("TicketsJets", "El carrito está vacío.")
-        return
-
-    # Verificar métodos de pago seleccionados
-    metodos_seleccionados = []
-    if var_efectivo.get():
-        metodos_seleccionados.append("Efectivo")
-    if var_tarjeta.get():
-        metodos_seleccionados.append("Tarjeta")
-    if var_transferencia.get():
-        metodos_seleccionados.append("Transferencia")
-
-    if not metodos_seleccionados:
-        messagebox.showwarning(
-            "TicketsJets",
-            "Por favor, seleccione al menos un método de pago.",
-        )
-        return
-
-    # Procesar Venta Exitosa
-    recaudacion_total += total
-    lbl_recaudacion_val.config(text=f"${recaudacion_total:,.2f}")
-
-    modos_str = " + ".join(metodos_seleccionados)
-    messagebox.showinfo(
-        "TicketsJets",
-        f"¡Venta Procesada con Éxito!\nTotal: ${total:,.2f}\nMétodo: {modos_str}",
-    )
-
-    # Limpiar para la siguiente venta
-    carrito.clear()
+def ejecutar_agregar_producto(prod):
+    agregar_al_carrito(prod)
     actualizar_interfaz_carrito()
 
 
+# ==========================================================
+# VENTANA DE COBRO AVANZADA (SIMPLE, COMBINADO Y CORTESÍA)
+# ==========================================================
+
+def abrir_ventana_cobro():
+    total_a_cobrar = obtener_total_carrito()
+    if total_a_cobrar <= 0:
+        messagebox.showwarning("TicketsJets", "El carrito está vacío.")
+        return
+
+    modos = obtener_modos_pago()
+
+    win_cobro = tk.Toplevel(ventana)
+    win_cobro.title("Procesar Pago - TicketsJets")
+    win_cobro.geometry("520x620")
+    win_cobro.configure(bg="#11111b")
+    win_cobro.grab_set()
+    win_cobro.resizable(False, False)
+
+    # Centrar la ventana
+    win_cobro.update_idletasks()
+    x = (win_cobro.winfo_screenwidth() // 2) - (520 // 2)
+    y = (win_cobro.winfo_screenheight() // 2) - (620 // 2)
+    win_cobro.geometry(f"+{x}+{y}")
+
+    # Header de Cobro
+    frame_top = tk.Frame(win_cobro, bg="#8d1324", pady=10)
+    frame_top.pack(fill="x")
+
+    tk.Label(
+        frame_top, text="TOTAL A COBRAR", font=("Segoe UI", 11, "bold"), fg="#adb5bd", bg="#8d1324"
+    ).pack()
+    tk.Label(
+        frame_top, text=f"${total_a_cobrar:,.2f}", font=("Segoe UI", 24, "bold"), fg="#a6e3a1", bg="#8d1324"
+    ).pack()
+
+    # Contenedor de Formas de Pago
+    frame_body = tk.Frame(win_cobro, bg="#11111b", padx=20, pady=15)
+    frame_body.pack(fill="both", expand=True)
+
+    entries_pago = {}
+
+    tk.Label(
+        frame_body,
+        text="Ingrese los montos recibidos por cada método:",
+        font=("Segoe UI", 10, "bold"),
+        fg="#f8f9fa",
+        bg="#11111b",
+    ).pack(anchor="w", pady=(0, 10))
+
+    for m in modos:
+        f_row = tk.Frame(frame_body, bg="#212529", pady=6, padx=10)
+        f_row.pack(fill="x", pady=4)
+
+        lbl_m = tk.Label(
+            f_row, text=m["nombre"], font=("Segoe UI", 11), fg="#f8f9fa", bg="#212529", width=22, anchor="w"
+        )
+        lbl_m.pack(side="left")
+
+        ent_m = tk.Entry(
+            f_row, font=("Segoe UI", 12, "bold"), bg="#11111b", fg="#a6e3a1", insertbackground="white", justify="right"
+        )
+        ent_m.pack(side="right", fill="x", expand=True)
+        entries_pago[m["idmodopago"]] = (ent_m, m["nombre"])
+
+    # Si hay un solo método o predeterminado "Efectivo", colocar el total por defecto
+    if 1 in entries_pago:
+        entries_pago[1][0].insert(0, f"{total_a_cobrar:.2f}")
+
+    # Cálculo de Cambio / Vuelto
+    lbl_vuelto = tk.Label(
+        frame_body, text="Vuelto: $0.00", font=("Segoe UI", 12, "bold"), fg="#20c997", bg="#11111b"
+    )
+    lbl_vuelto.pack(pady=10)
+
+    def recalcular_vuelto(*args):
+        ingresado = 0.0
+        for ent, _ in entries_pago.values():
+            try:
+                val = float(ent.get().strip() or 0)
+                ingresado += val
+            except ValueError:
+                pass
+        vuelto = ingresado - total_a_cobrar
+        if vuelto > 0:
+            lbl_vuelto.config(text=f"Vuelto a entregar: ${vuelto:,.2f}", fg="#20c997")
+        elif vuelto == 0:
+            lbl_vuelto.config(text="Monto Exacto", fg="#adb5bd")
+        else:
+            lbl_vuelto.config(text=f"Falta ingresar: ${abs(vuelto):,.2f}", fg="#dc3545")
+
+    for ent, _ in entries_pago.values():
+        ent.bind("<KeyRelease>", recalcular_vuelto)
+    recalcular_vuelto()
+
+    # Opción de Cortesía
+    frame_cortesia = tk.LabelFrame(
+        frame_body, text=" Opción Cortesía ($0.00) ", font=("Segoe UI", 9, "bold"), fg="#adb5bd", bg="#11111b", pady=5, padx=10
+    )
+    frame_cortesia.pack(fill="x", pady=10)
+
+    var_es_cortesia = tk.BooleanVar(value=False)
+    chk_cortesia = tk.Checkbutton(
+        frame_cortesia,
+        text="Marcar Venta como Cortesía",
+        variable=var_es_cortesia,
+        font=("Segoe UI", 10),
+        fg="white",
+        bg="#11111b",
+        selectcolor="#212529",
+    )
+    chk_cortesia.pack(anchor="w")
+
+    ent_autorizado = tk.Entry(
+        frame_cortesia, font=("Segoe UI", 10), bg="#212529", fg="white", insertbackground="white"
+    )
+    ent_autorizado.insert(0, "Nombre de quien Autoriza")
+    ent_autorizado.pack(fill="x", pady=5)
+
+    def confirmar_pago():
+        es_cortesia = var_es_cortesia.get()
+        autoriza_str = ent_autorizado.get().strip()
+
+        if es_cortesia:
+            if not autoriza_str or autoriza_str == "Nombre de quien Autoriza":
+                messagebox.showwarning("Cortesía", "Por favor ingrese el nombre del autorizante.", parent=win_cobro)
+                return
+            desgloses = []
+        else:
+            desgloses = []
+            for id_m, (ent, nom) in entries_pago.items():
+                try:
+                    val = float(ent.get().strip() or 0)
+                    if val > 0:
+                        desgloses.append({"idmodopago": id_m, "importe": val})
+                except ValueError:
+                    messagebox.showerror("Error", f"Monto inválido en {nom}.", parent=win_cobro)
+                    return
+
+        exito, msj = registrar_venta(
+            desgloses_pago=desgloses,
+            es_cortesia=es_cortesia,
+            autoriza_cortesia=autoriza_str,
+        )
+
+        if exito:
+            messagebox.showinfo("Éxito", msj, parent=ventana)
+            win_cobro.destroy()
+            actualizar_interfaz_carrito()
+            actualizar_recaudacion_ui()
+        else:
+            messagebox.showwarning("Error de Pago", msj, parent=win_cobro)
+
+    btn_confirmar = tk.Button(
+        win_cobro,
+        text="✓ CONFIRMAR Y REGISTRAR VENTA (Enter)",
+        font=("Segoe UI", 12, "bold"),
+        bg="#0d6efd",
+        fg="white",
+        bd=0,
+        pady=12,
+        cursor="hand2",
+        command=confirmar_pago,
+    )
+    btn_confirmar.pack(fill="x", side="bottom")
+
+    win_cobro.bind("<Return>", lambda e: confirmar_pago())
+
+
 def salir_quiosco(event=None):
-    if messagebox.askyesno(
-        "TicketsJets", "¿Desea cerrar el sistema de quiosco?"
-    ):
+    if messagebox.askyesno("TicketsJets", "¿Desea cerrar el sistema de ventas?"):
         if ventana:
             ventana.destroy()
 
+        subprocess.Popen(["python", "login.py"])
+
 
 # ==========================================================
-# INICIALIZACIÓN Y CONSTRUCCIÓN DE LA INTERFAZ
+# CONSTRUCCIÓN DE LA VENTANA PRINCIPAL
 # ==========================================================
-
 
 def iniciar_sistema():
-    global ventana, lbl_reloj, lbl_total_num, lbl_recaudacion_val
-    global frame_lista_carrito, var_efectivo, var_tarjeta, var_transferencia
+    global ventana, lbl_reloj, lbl_total_num, lbl_recaudacion_val, frame_lista_carrito
 
-    # Cargar usuario real de la sesión
-    usuario_activo = Sesion.nombre() or "Invitado"
-    rol_activo = (Sesion.rol() or "Vendedor").strip().title()
-
-    # --------------------------------------------------
-    # CONFIGURACIÓN PRINCIPAL
-    # --------------------------------------------------
+    info_sesion = obtener_datos_sesion_actual()
 
     ventana = tk.Tk()
-    ventana.title("TicketsJets - Módulo Quiosco")
+    ventana.title("TicketsJets - Módulo de Ventas")
     ventana.attributes("-fullscreen", True)
     ventana.configure(bg="#11111b")
 
     ventana.bind("<Escape>", salir_quiosco)
-    ventana.bind("<F2>", lambda e: procesar_cobro())
+    ventana.bind("<F2>", lambda e: abrir_ventana_cobro())
 
-    # --------------------------------------------------
-    # COLORES
-    # --------------------------------------------------
-
+    # Constantes de Colores
     COLOR_HEADER_BG = "#8d1324"
-    COLOR_TOOLBAR = "#1b1f23"
     COLOR_MAIN_BG = "#11111b"
     COLOR_CARD_BG = "#212529"
-
     TEXT_LIGHT = "#f8f9fa"
-
     BTN_PRIMARY = "#0d6efd"
-    BTN_SUCCESS = "#198754"
     BTN_DANGER = "#dc3545"
-
-    # --------------------------------------------------
-    # CONTENEDOR PRINCIPAL
-    # --------------------------------------------------
 
     main_container = tk.Frame(ventana, bg=COLOR_MAIN_BG)
     main_container.pack(fill="both", expand=True)
 
-    # --------------------------------------------------
-    # HEADER
-    # --------------------------------------------------
-
+    # ======================================================
+    # HEADER / CABECERA SUPERIOR
+    # ======================================================
     header = tk.Frame(main_container, bg=COLOR_HEADER_BG, height=80)
     header.pack(fill="x")
     header.pack_propagate(False)
 
-    # Logo / Marca (Carga dinámica de imagen)
     DIRECTORIO_BASE = os.path.dirname(os.path.abspath(__file__))
     RUTA_PNG = os.path.join(DIRECTORIO_BASE, "icono.png")
 
     if os.path.exists(RUTA_PNG):
-        # Guardamos la imagen en el objeto 'ventana' para evitar el Garbage Collector
         ventana.img_marca = tk.PhotoImage(file=RUTA_PNG)
         lbl_marca = tk.Label(
             header,
@@ -247,29 +345,26 @@ def iniciar_sistema():
             bg=COLOR_HEADER_BG,
             fg="white",
         )
-
     lbl_marca.pack(side="left", padx=20)
 
-    # Usuario / Operador
+    texto_cabecera = f"Punto: {info_sesion['punto']}   |   Usuario: {info_sesion['usuario']} ({info_sesion['rol']})   |   Operador: {info_sesion['operador']}"
     lbl_pos = tk.Label(
         header,
-        text=f"Punto: {punto_venta}   |   Operador: {usuario_activo} ({rol_activo})",
-        font=("Segoe UI", 11),
+        text=texto_cabecera,
+        font=("Segoe UI", 11, "bold"),
         bg=COLOR_HEADER_BG,
         fg="white",
     )
-    lbl_pos.pack(side="left", padx=25)
+    lbl_pos.pack(side="left", padx=15)
 
-    # Recaudación
-    frame_recaudacion = tk.Frame(
-        header, bg="#5a101b", padx=15, pady=6
-    )
+    # Recaudación Persistente
+    frame_recaudacion = tk.Frame(header, bg="#5a101b", padx=15, pady=6)
     frame_recaudacion.pack(side="right", padx=15)
 
     tk.Label(
         frame_recaudacion,
-        text="RECAUDACIÓN",
-        font=("Segoe UI", 9, "bold"),
+        text="RECAUDACIÓN JORNADA",
+        font=("Segoe UI", 8, "bold"),
         bg="#5a101b",
         fg="#adb5bd",
     ).pack(anchor="w")
@@ -283,7 +378,6 @@ def iniciar_sistema():
     )
     lbl_recaudacion_val.pack(anchor="w")
 
-    # Hora
     lbl_reloj = tk.Label(
         header,
         text="",
@@ -291,9 +385,8 @@ def iniciar_sistema():
         bg=COLOR_HEADER_BG,
         fg="white",
     )
-    lbl_reloj.pack(side="right", padx=20)
+    lbl_reloj.pack(side="right", padx=15)
 
-    # Salir
     btn_salir = tk.Button(
         header,
         text="❌ Cerrar Sistema",
@@ -305,16 +398,14 @@ def iniciar_sistema():
         cursor="hand2",
         command=salir_quiosco,
     )
-    btn_salir.pack(side="right", padx=15)
+    btn_salir.pack(side="right", padx=10)
 
-    # --------------------------------------------------
-    # CUERPO
-    # --------------------------------------------------
-
+    # ======================================================
+    # CUERPO PRINCIPAL
+    # ======================================================
     cuerpo = tk.Frame(main_container, bg=COLOR_MAIN_BG, padx=15, pady=15)
     cuerpo.pack(fill="both", expand=True)
 
-    # --- PANEL IZQUIERDO: MATRIZ DE CARDS 5x5 (PRODUCTOS) ---
     panel_izquierdo = tk.Frame(cuerpo, bg=COLOR_MAIN_BG)
     panel_izquierdo.pack(side="left", fill="both", expand=True, padx=(0, 15))
 
@@ -374,14 +465,14 @@ def iniciar_sistema():
         )
         lbl_pprice.pack(expand=True, fill="both", padx=4, pady=(0, 6))
 
-        def on_card_click(event, p=prod):
-            agregar_al_carrito(p)
+        def on_click(e, p=prod):
+            ejecutar_agregar_producto(p)
 
-        card.bind("<Button-1>", on_card_click)
-        lbl_pname.bind("<Button-1>", on_card_click)
-        lbl_pprice.bind("<Button-1>", on_card_click)
+        card.bind("<Button-1>", on_click)
+        lbl_pname.bind("<Button-1>", on_click)
+        lbl_pprice.bind("<Button-1>", on_click)
 
-    # --- PANEL DERECHO: CARRITO Y CONFIGURACIÓN DE PAGO ---
+    # --- PANEL DERECHO: CARRITO ---
     panel_derecho = tk.Frame(
         cuerpo,
         bg=COLOR_CARD_BG,
@@ -407,82 +498,20 @@ def iniciar_sistema():
     frame_lista_carrito = tk.Frame(panel_derecho, bg="#1e1e2e")
     frame_lista_carrito.pack(fill="both", expand=True, padx=10, pady=10)
 
-    # Sección de Modos de Pago Combinables
-    frame_pagos = tk.LabelFrame(
-        panel_derecho,
-        text=" Selector de Métodos de Pago (Combinable) ",
-        font=("Segoe UI", 10, "bold"),
-        fg="#adb5bd",
-        bg=COLOR_CARD_BG,
-        padx=10,
-        pady=10,
-        bd=1,
-    )
-    frame_pagos.pack(fill="x", padx=10, pady=5)
-
-    var_efectivo = tk.BooleanVar(value=True)
-    var_tarjeta = tk.BooleanVar()
-    var_transferencia = tk.BooleanVar()
-
-    chk_efectivo = tk.Checkbutton(
-        frame_pagos,
-        text="Efectivo",
-        variable=var_efectivo,
-        font=("Segoe UI", 11),
-        fg=TEXT_LIGHT,
-        bg=COLOR_CARD_BG,
-        selectcolor="#11111b",
-        activebackground=COLOR_CARD_BG,
-        activeforeground=TEXT_LIGHT,
-    )
-    chk_efectivo.pack(anchor="w", pady=2)
-
-    chk_tarjeta = tk.Checkbutton(
-        frame_pagos,
-        text="Tarjeta de Crédito / Débito",
-        variable=var_tarjeta,
-        font=("Segoe UI", 11),
-        fg=TEXT_LIGHT,
-        bg=COLOR_CARD_BG,
-        selectcolor="#11111b",
-        activebackground=COLOR_CARD_BG,
-        activeforeground=TEXT_LIGHT,
-    )
-    chk_tarjeta.pack(anchor="w", pady=2)
-
-    chk_transferencia = tk.Checkbutton(
-        frame_pagos,
-        text="Transferencia / Billetera Digital",
-        variable=var_transferencia,
-        font=("Segoe UI", 11),
-        fg=TEXT_LIGHT,
-        bg=COLOR_CARD_BG,
-        selectcolor="#11111b",
-        activebackground=COLOR_CARD_BG,
-        activeforeground=TEXT_LIGHT,
-    )
-    chk_transferencia.pack(anchor="w", pady=2)
-
-    # Totales y Acción Cobrar
-    frame_inferior_cart = tk.Frame(
-        panel_derecho, bg=COLOR_CARD_BG, padx=10, pady=10
-    )
+    # Botón de Cobro Inferior
+    frame_inferior_cart = tk.Frame(panel_derecho, bg=COLOR_CARD_BG, padx=10, pady=10)
     frame_inferior_cart.pack(fill="x", side="bottom")
-
-    div_linea = tk.Frame(frame_inferior_cart, bg="#313244", height=2)
-    div_linea.pack(fill="x", pady=10)
 
     frame_total_texto = tk.Frame(frame_inferior_cart, bg=COLOR_CARD_BG)
     frame_total_texto.pack(fill="x", pady=(0, 15))
 
-    lbl_total_txt = tk.Label(
+    tk.Label(
         frame_total_texto,
         text="TOTAL A COBRAR:",
         font=("Segoe UI", 14, "bold"),
         fg=TEXT_LIGHT,
         bg=COLOR_CARD_BG,
-    )
-    lbl_total_txt.pack(side="left")
+    ).pack(side="left")
 
     lbl_total_num = tk.Label(
         frame_total_texto,
@@ -495,7 +524,7 @@ def iniciar_sistema():
 
     btn_cobrar = tk.Button(
         frame_inferior_cart,
-        text="✓ PROCESAR COBRO",
+        text="✓ PROCESAR COBRO (F2)",
         font=("Segoe UI", 14, "bold"),
         bg=BTN_PRIMARY,
         fg=TEXT_LIGHT,
@@ -503,28 +532,26 @@ def iniciar_sistema():
         cursor="hand2",
         activebackground="#0b5ed7",
         activeforeground=TEXT_LIGHT,
-        command=procesar_cobro,
+        command=abrir_ventana_cobro,
     )
     btn_cobrar.pack(fill="x", ipady=12)
 
-    # --------------------------------------------------
-    # BARRA DE ESTADO PROFESIONAL
-    # --------------------------------------------------
-
+    # ======================================================
+    # BARRA DE ESTADO INFERIOR
+    # ======================================================
     status_bar = tk.Frame(
         ventana,
         bg="#212529",
-        height=52,
+        height=45,
         highlightbackground="#343a40",
         highlightthickness=1,
     )
     status_bar.pack(side="bottom", fill="x")
     status_bar.pack_propagate(False)
 
-    # Información izquierda
     lbl_estado = tk.Label(
         status_bar,
-        text=f"🟢 Caja: {estado_caja}",
+        text=f"🟢 Caja: {info_sesion['estado_caja']}",
         bg="#212529",
         fg="#20c997",
         font=("Segoe UI", 10, "bold"),
@@ -533,30 +560,30 @@ def iniciar_sistema():
 
     lbl_jornada = tk.Label(
         status_bar,
-        text=f"📅 Jornada: {jornada_activa}",
+        text=f"📅 Jornada: {info_sesion['jornada']}",
         bg="#212529",
         fg="white",
         font=("Segoe UI", 10),
     )
     lbl_jornada.pack(side="left", padx=10)
 
-    lbl_usuario_bar = tk.Label(
+    lbl_operador_bar = tk.Label(
         status_bar,
-        text=f"👤 {usuario_activo}",
+        text=f"👤 Operador: {info_sesion['operador']}",
         bg="#212529",
         fg="white",
-        font=("Segoe UI", 10),
+        font=("Segoe UI", 10, "bold"),
     )
-    lbl_usuario_bar.pack(side="left", padx=10)
+    lbl_operador_bar.pack(side="left", padx=10)
 
-    lbl_caja = tk.Label(
+    lbl_punto_bar = tk.Label(
         status_bar,
-        text=f"🏦 {numero_caja}",
+        text=f"🏦 {info_sesion['punto']}",
         bg="#212529",
         fg="white",
         font=("Segoe UI", 10),
     )
-    lbl_caja.pack(side="left", padx=10)
+    lbl_punto_bar.pack(side="left", padx=10)
 
     lbl_servidor = tk.Label(
         status_bar,
@@ -567,40 +594,18 @@ def iniciar_sistema():
     )
     lbl_servidor.pack(side="left", padx=10)
 
-    # Atajos
     frame_atajos = tk.Frame(status_bar, bg="#212529")
-    frame_atajos.pack(side="left", padx=40)
+    frame_atajos.pack(side="left", padx=30)
 
-    tk.Label(
-        frame_atajos,
-        text="F2 Cobrar",
-        bg="#212529",
-        fg="#adb5bd",
-        font=("Segoe UI", 9),
-    ).pack(side="left", padx=6)
-    tk.Label(
-        frame_atajos,
-        text="F3 Buscar",
-        bg="#212529",
-        fg="#adb5bd",
-        font=("Segoe UI", 9),
-    ).pack(side="left", padx=6)
-    tk.Label(
-        frame_atajos,
-        text="F4 Entradas",
-        bg="#212529",
-        fg="#adb5bd",
-        font=("Segoe UI", 9),
-    ).pack(side="left", padx=6)
-    tk.Label(
-        frame_atajos,
-        text="ESC Salir",
-        bg="#212529",
-        fg="#adb5bd",
-        font=("Segoe UI", 9),
-    ).pack(side="left", padx=6)
+    for atajo in ["F2 Cobrar", "ESC Salir"]:
+        tk.Label(
+            frame_atajos,
+            text=atajo,
+            bg="#212529",
+            fg="#adb5bd",
+            font=("Segoe UI", 9),
+        ).pack(side="left", padx=6)
 
-    # Botón Cerrar Caja
     frame_botones_estado = tk.Frame(status_bar, bg="#212529")
     frame_botones_estado.pack(side="right", padx=15)
 
@@ -609,16 +614,18 @@ def iniciar_sistema():
         text="🔒 Cerrar Caja",
         bg="#dc3545",
         fg="white",
-        font=("Segoe UI", 10, "bold"),
+        font=("Segoe UI", 9, "bold"),
         bd=0,
         cursor="hand2",
-        padx=20,
+        padx=15,
+        pady=3,
     )
     btn_cerrar_caja.pack(side="right")
 
-    # Ejecuciones iniciales
+    # Iniciar ciclos y sincronizar datos reales
     actualizar_reloj()
     actualizar_interfaz_carrito()
+    actualizar_recaudacion_ui()
     ventana.mainloop()
 
 

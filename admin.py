@@ -8,6 +8,11 @@ from PIL import Image, ImageTk
 # Importamos las vistas existentes
 from views.vista_usuarios import VistaUsuarios
 from views.vista_jornadas import VistaJornadas
+from views.vista_puntos_venta import VistaPuntosVenta
+from views.vista_productos import VistaProductos
+from views.vista_jornadas_admin import VistaJornadasAdmin
+from views.vista_monitoreo_jornadas import VistaMonitoreoJornadas
+
 
 # Paleta de colores estilo Dark / Bootstrap Modern
 COLOR_BG_MAIN = "#0f0f17"        # Fondo principal oscuro
@@ -149,6 +154,7 @@ class AdminDashboard(tk.Tk):
         mb_jornadas, menu_jornadas = self._crear_menubutton_nav(navbar, "Jornadas ▾")
         menu_jornadas.add_command(label="Crear Nueva Jornada", command=lambda: self.mostrar_vista("Jornadas"))
         menu_jornadas.add_command(label="Administrar Jornadas", command=lambda: self.mostrar_vista("Jornadas_Admin"))
+        menu_jornadas.add_command(label="📡 Monitoreo de Jornadas", command=lambda: self.mostrar_vista("Monitoreo"))
 
         # 3. Cajas
         self._crear_boton_nav(navbar, "Cajas", lambda: self.mostrar_vista("Cajas"))
@@ -244,6 +250,26 @@ class AdminDashboard(tk.Tk):
             
         elif nombre_vista == "Jornadas":
             vista = VistaJornadas(self.area_trabajo)
+            vista.pack(fill="both", expand=True)
+
+        elif nombre_vista == "PuntosVenta":
+            vista = VistaPuntosVenta(self.area_trabajo)
+            vista.pack(fill="both", expand=True)
+
+        # ... otros controles de vistas (jornadas, puntos de venta, etc.) ...
+        
+        elif nombre_vista == "Productos":
+            self.vista_actual = VistaProductos(self.area_trabajo)
+            self.vista_actual.pack(fill="both", expand=True)
+            
+        # ...
+
+        elif nombre_vista.lower() in ["jornadas_admin", "admin_jornadas"]:
+            vista = VistaJornadasAdmin(self.area_trabajo)
+            vista.pack(fill="both", expand=True)
+
+        elif nombre_vista.lower() in ["monitoreo_jornadas", "monitoreo"]:
+            vista = VistaMonitoreoJornadas(self.area_trabajo)
             vista.pack(fill="both", expand=True)
 
         elif nombre_vista == "Inicio":
