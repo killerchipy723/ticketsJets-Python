@@ -12,6 +12,7 @@ from views.vista_puntos_venta import VistaPuntosVenta
 from views.vista_productos import VistaProductos
 from views.vista_jornadas_admin import VistaJornadasAdmin
 from views.vista_monitoreo_jornadas import VistaMonitoreoJornadas
+from views.vista_modopago import VistaModoPago
 
 
 # Paleta de colores estilo Dark / Bootstrap Modern
@@ -260,6 +261,10 @@ class AdminDashboard(tk.Tk):
         
         elif nombre_vista == "Productos":
             self.vista_actual = VistaProductos(self.area_trabajo)
+            self.vista_actual.pack(fill="both", expand=True)
+
+        elif nombre_vista == "ModoPago":
+            self.vista_actual = VistaModoPago(self.area_trabajo)
             self.vista_actual.pack(fill="both", expand=True)
             
         # ...

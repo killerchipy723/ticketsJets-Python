@@ -3,24 +3,24 @@ import pymysql
 from database.conexion import conectar
 from utils.network import obtener_mac_local
 
+
 def iniciar_sesion(usuario, password):
-    """
-    Valida credenciales (case-insensitive para el usuario), asignación de MAC,
-    permisos, jornada activa y caja.
+    """Valida credenciales, asignación de equipo (MAC), permisos,
+
+    jornada activa y estado de caja en la tabla jornadas_puntos.
     """
     conexion = conectar()
     if not conexion:
         return None, "Error al conectar con la base de datos."
 
-    conexion.commit()
     cursor = conexion.cursor(pymysql.cursors.DictCursor)
 
     try:
         equipo_mac = obtener_mac_local()
 
-        # ======================
-        # 1️⃣ VALIDAR USUARIO Y CONTRASEÑA (INSENSIBLE A MAYÚSCULAS EN EL USUARIO)
-        # ======================
+        # ==========================================================
+        # 1️⃣ VALIDAR USUARIO Y CONTRASEÑA
+        # ==========================================================
         sql_usuario = """
             SELECT idusuarios, nombre, rol, estado, operador
             FROM usuarios
@@ -33,13 +33,12 @@ def iniciar_sesion(usuario, password):
         if not user:
             return None, "Usuario o contraseña incorrectos."
 
-        # Validar estado en minúsculas por seguridad
         if (user["estado"] or "").strip().lower() != "activo":
             return None, "El usuario se encuentra inactivo."
 
-        # ======================
-        # CASO ADMINISTRADOR
-        # ======================
+        # ==========================================================
+        # CASO ADMINISTRADOR (Acceso directo)
+        # ==========================================================
         rol_limpio = (user["rol"] or "").strip().lower()
         if rol_limpio in ["administrador", "admin"]:
             datos_sesion = {
@@ -50,13 +49,13 @@ def iniciar_sesion(usuario, password):
                 "operador": user["operador"],
                 "idpunto": None,
                 "punto": None,
-                "idjornada": None
+                "idjornada": None,
             }
             return datos_sesion, None
 
-        # ======================
-        # 2️⃣ VALIDAR PUNTO DE VENTA (POR MAC - CASE INSENSITIVE)
-        # ======================
+        # ==========================================================
+        # 2️⃣ VALIDAR PUNTO DE VENTA (POR MAC)
+        # ==========================================================
         sql_punto = """
             SELECT idpunto, nombre
             FROM puntos_venta
@@ -67,11 +66,15 @@ def iniciar_sesion(usuario, password):
         punto = cursor.fetchone()
 
         if not punto:
-            return None, f"Este equipo (MAC: {equipo_mac}) no está habilitado como punto de venta."
+            return (
+                None,
+                f"Este equipo (MAC: {equipo_mac}) no está habilitado como"
+                " punto de venta.",
+            )
 
-        # ======================
-        # 3️⃣ VALIDAR PERMISO USUARIO ↔ PUNTO
-        # ======================
+        # ==========================================================
+        # 3️⃣ VALIDAR PERMISO USUARIO ↔ PUNTO DE VENTA
+        # ==========================================================
         sql_permiso = """
             SELECT 1
             FROM usuarios_puntos
@@ -82,11 +85,14 @@ def iniciar_sesion(usuario, password):
         cursor.execute(sql_permiso, (user["idusuarios"], punto["idpunto"]))
 
         if not cursor.fetchone():
-            return None, "Usuario no autorizado para operar en este punto de venta."
+            return (
+                None,
+                "Usuario no autorizado para operar en este punto de venta.",
+            )
 
-        # ======================
-        # 4️⃣ VALIDAR JORNADA ACTIVA
-        # ======================
+        # ==========================================================
+        # 4️⃣ VALIDAR JORNADA ACTIVA GENERAL
+        # ==========================================================
         sql_jornada = """
             SELECT idjornada, nombre 
             FROM jornadas 
@@ -97,28 +103,51 @@ def iniciar_sesion(usuario, password):
         jornada = cursor.fetchone()
 
         if not jornada:
-            return None, "No hay ninguna jornada activa en el sistema. Contacte a un Administrador."
+            return (
+                None,
+                (
+                    "No hay ninguna jornada activa en el sistema. Contacte a"
+                    " un Administrador."
+                ),
+            )
 
         idjornada = jornada["idjornada"]
 
-        # ======================
-        # 5️⃣ VALIDAR ESTADO DE CAJA
-        # ======================
+        # ==========================================================
+        # 5️⃣ VALIDAR ESTADO DE CAJA EN 'jornadas_puntos'
+        # ==========================================================
         sql_caja = """
-            SELECT 1
-            FROM cierres_caja
-            WHERE idusuario = %s 
-              AND idjornada = %s
+            SELECT estado
+            FROM jornadas_puntos
+            WHERE idjornada = %s AND idpunto = %s
             LIMIT 1
         """
-        cursor.execute(sql_caja, (user["idusuarios"], idjornada))
+        cursor.execute(sql_caja, (idjornada, punto["idpunto"]))
+        caja = cursor.fetchone()
 
-        if cursor.fetchone():
-            return None, "❌ La caja ya fue cerrada para esta jornada. No puede volver a operar."
+        if not caja:
+            return (
+                None,
+                (
+                    "El punto de venta no tiene un estado asignado para la"
+                    " jornada actual."
+                ),
+            )
 
-        # ======================
-        # SESIÓN COMPLETADA
-        # ======================
+        estado_caja = (caja["estado"] or "").strip().lower()
+
+        if estado_caja == "cerrado":
+            return (
+                None,
+                (
+                    "❌ La caja ya fue cerrada para esta jornada. No puede volver"
+                    " a operar."
+                ),
+            )
+
+        # ==========================================================
+        # SESIÓN COMPLETADA EXITOSAMENTE
+        # ==========================================================
         datos_sesion = {
             "id": user["idusuarios"],
             "nombre": user["nombre"],
@@ -128,7 +157,7 @@ def iniciar_sesion(usuario, password):
             "equipo": equipo_mac,
             "operador": user["operador"],
             "idjornada": idjornada,
-            "nombre_jornada": jornada["nombre"]
+            "nombre_jornada": jornada["nombre"],
         }
 
         return datos_sesion, None
@@ -136,6 +165,7 @@ def iniciar_sesion(usuario, password):
     except Exception as e:
         print(f"❌ Error en iniciar_sesion: {e}")
         return None, f"Error de base de datos: {e}"
+
     finally:
         cursor.close()
         conexion.close()

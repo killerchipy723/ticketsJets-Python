@@ -109,8 +109,13 @@ def obtener_recaudacion_acumulada_jornada():
 
     try:
         cursor = conexion.cursor()
-        idjornada = obtener_id_sesion("idjornada", 1)
-        idusuario = obtener_id_sesion("idusuario", obtener_id_sesion("id", 1))
+        
+        # ✅ Usamos la función corregida que contiene los IDs reales
+        sesion = obtener_datos_sesion_actual()
+        idjornada = sesion.get("idjornada", 1)
+        idusuario = sesion.get("idusuario", 1)
+
+        print(f"🔍 Consultando recaudación para idjornada: {idjornada}, idusuario: {idusuario}")
 
         sql = """
             SELECT COALESCE(SUM(total), 0.00) 
@@ -119,41 +124,58 @@ def obtener_recaudacion_acumulada_jornada():
         """
         cursor.execute(sql, (idjornada, idusuario))
         resultado = cursor.fetchone()
-        return float(resultado[0]) if resultado else 0.0
+        
+        monto = float(resultado[0]) if resultado and resultado[0] is not None else 0.0
+        print(f"💰 Recaudación acumulada hallada: ${monto}")
+        return monto
+
     except Exception as e:
         print(f"❌ Error al consultar recaudación acumulada: {e}")
         return 0.0
     finally:
         conexion.close()
 
-def registrar_venta(desgloses_pago, idcliente=None, observaciones="", es_cortesia=False, autoriza_cortesia=""):
+def registrar_venta(
+    desgloses_pago, 
+    idcliente=None, 
+    observaciones="", 
+    es_cortesia=False, 
+    autoriza_cortesia="",
+    idjornada=None,    # <-- NUEVO
+    idpunto=None,      # <-- NUEVO
+    idusuario=None     # <-- NUEVO
+):
     """
     Procesa el cobro insertando en 'ventas', 'ventas_detalle' y 'ventas_pago'.
     Acepta pagos simples, combinados y cortesías.
     """
     if not carrito:
-        return False, "El carrito está vacío."
+        return False, "El carrito está vacío.", None
 
     total_venta = 0.0 if es_cortesia else obtener_total_carrito()
 
     if not es_cortesia:
         if not desgloses_pago:
-            return False, "Por favor, especifique al menos un método de pago."
+            return False, "Por favor, especifique al menos un método de pago.", None
 
         total_pagado = sum(float(pago["importe"]) for pago in desgloses_pago)
         if round(total_venta, 2) > round(total_pagado, 2):
-            return False, f"Monto insuficiente. Total a cobrar: ${total_venta:,.2f} | Ingresado: ${total_pagado:,.2f}"
+            return False, f"Monto insuficiente. Total a cobrar: ${total_venta:,.2f} | Ingresado: ${total_pagado:,.2f}", None
 
     conexion = conectar()
     if not conexion:
-        return False, "Error al conectar con la base de datos."
+        return False, "Error al conectar con la base de datos.", None
 
     try:
         cursor = conexion.cursor()
 
-        idjornada = obtener_id_sesion("idjornada", 1)
-        idusuario = obtener_id_sesion("idusuario", obtener_id_sesion("id", 1))
-        idpunto = obtener_id_sesion("idpunto", 1)
+        # Si no nos pasan los IDs explícitos, los buscamos con el fallback habitual
+        if not idjornada:
+            idjornada = obtener_id_sesion("idjornada", 1)
+        if not idpunto:
+            idpunto = obtener_id_sesion("idpunto", 1)
+        if not idusuario:
+            idusuario = obtener_id_sesion("idusuario", obtener_id_sesion("id", 1))
 
         idmodopago_cabecera = None
         if not es_cortesia and len(desgloses_pago) == 1:
@@ -192,7 +214,7 @@ def registrar_venta(desgloses_pago, idcliente=None, observaciones="", es_cortesi
                 precio_u, subtotal, cortesia_flag, autorizado_por
             ))
 
-        # 3. INSERT EN 'ventas_pago' (Si no es cortesía)
+        # 3. INSERT EN 'ventas_pagos' (Si no es cortesía)
         if not es_cortesia:
             sql_pago = """
                 INSERT INTO ventas_pagos (idventa, idmodopago, importe)
@@ -207,18 +229,18 @@ def registrar_venta(desgloses_pago, idcliente=None, observaciones="", es_cortesi
         mensaje = f"¡Venta #{idventa} procesada con éxito!\nTotal: ${total_venta:,.2f}"
         vaciar_carrito()
         
-        return True, mensaje
+        return True, mensaje, idventa
 
     except Exception as e:
         conexion.rollback()
         print(f"❌ Error al guardar venta en BD: {e}")
-        return False, f"Error en base de datos: {e}"
+        return False, f"Error en base de datos: {e}", None
     finally:
         cursor.close()
         conexion.close()
 
 def obtener_datos_sesion_actual():
-    """Extrae de forma limpia y segura cada campo de la Sesión activa."""
+    """Extrae de forma limpia y segura cada campo de la Sesión activa (incluyendo IDs numéricos)."""
     datos = {}
     if hasattr(Sesion, "datos") and isinstance(Sesion.datos, dict):
         datos = Sesion.datos
@@ -242,6 +264,26 @@ def obtener_datos_sesion_actual():
                 
         return valor_defecto
 
+    def obtener_id(clave, atributo_fallback=None, valor_defecto=1):
+        """Extrae un ID numérico entero de la sesión."""
+        if clave in datos and datos[clave] is not None:
+            try:
+                return int(datos[clave])
+            except (ValueError, TypeError):
+                pass
+
+        if atributo_fallback and hasattr(Sesion, atributo_fallback):
+            attr = getattr(Sesion, atributo_fallback)
+            val = attr() if callable(attr) else attr
+            if val is not None:
+                try:
+                    return int(val)
+                except (ValueError, TypeError):
+                    pass
+
+        return valor_defecto
+
+    # Nombres descriptivos para la interfaz y tickets
     usuario = obtener_valor("nombre", "nombre", "Invitado")
     operador = obtener_valor("operador", "operador", usuario)
     rol = obtener_valor("rol", "rol", "Vendedor").strip().title()
@@ -249,12 +291,25 @@ def obtener_datos_sesion_actual():
     jornada = obtener_valor("nombre_jornada", "jornada", "Jornada Activa")
     equipo = obtener_valor("equipo", "equipo", "LOCAL")
 
+    # ✅ IDs NUMÉRICOS PARA LA BASE DE DATOS
+    idusuario = obtener_id("idusuarios", "id", 1)
+    if idusuario == 1:
+        idusuario = obtener_id("idusuario", "id", 1)
+
+    idjornada = obtener_id("idjornada", "idjornada", 1)
+    idpunto = obtener_id("idpunto", "idpunto", 1)
+
     return {
+        # Cadenas de texto para visualización
         "usuario": usuario,
         "operador": operador,
         "rol": rol,
         "punto": punto,
         "jornada": jornada,
         "equipo": equipo,
-        "estado_caja": "ABIERTA"
+        "estado_caja": "ABIERTA",
+        # IDs numéricos para consultas e INSERTs en MySQL
+        "idusuario": idusuario,
+        "idjornada": idjornada,
+        "idpunto": idpunto
     }

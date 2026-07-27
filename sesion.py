@@ -1,42 +1,57 @@
 class Sesion:
     """
-    Maneja la sesión del usuario durante toda la ejecución
-    de la aplicación.
+    Maneja la sesión del usuario, la jornada activa y el punto de venta
+    durante toda la ejecución de la aplicación.
     """
 
     usuario = None
+    idjornada = None
+    idpunto = None
+    nombre_jornada = None
 
     @classmethod
-    def iniciar(cls, datos_usuario):
+    def iniciar(cls, datos_usuario, idjornada=None, idpunto=None, nombre_jornada=""):
         """
-        Guarda todos los datos del usuario autenticado.
+        Guarda todos los datos del usuario autenticado y su contexto de caja.
         """
         cls.usuario = datos_usuario
+        cls.idjornada = idjornada
+        cls.idpunto = idpunto
+        cls.nombre_jornada = nombre_jornada
+
+    @classmethod
+    def establecer_jornada(cls, idjornada, idpunto, nombre_jornada=""):
+        """
+        Permite asignar o actualizar la jornada y punto si se abren después del login.
+        """
+        cls.idjornada = idjornada
+        cls.idpunto = idpunto
+        cls.nombre_jornada = nombre_jornada
 
     @classmethod
     def cerrar(cls):
         """
-        Cierra la sesión.
+        Cierra la sesión y limpia el contexto.
         """
         cls.usuario = None
+        cls.idjornada = None
+        cls.idpunto = None
+        cls.nombre_jornada = None
 
     @classmethod
     def activa(cls):
-        """
-        Devuelve True si existe una sesión iniciada.
-        """
         return cls.usuario is not None
 
     @classmethod
     def obtener(cls):
-        """
-        Devuelve el diccionario completo del usuario.
-        """
         return cls.usuario
 
     @classmethod
     def id(cls):
-        return cls.usuario.get("idusuarios") if cls.usuario else None
+        # Mapea 'idusuario' o 'idusuarios'
+        if not cls.usuario:
+            return None
+        return cls.usuario.get("idusuarios") or cls.usuario.get("idusuario") or cls.usuario.get("id")
 
     @classmethod
     def nombre(cls):
@@ -56,10 +71,6 @@ class Sesion:
 
     @classmethod
     def obtener_campo(cls, campo):
-        """
-        Devuelve cualquier columna de la tabla usuarios.
-        """
         if cls.usuario:
             return cls.usuario.get(campo)
-
         return None
