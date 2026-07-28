@@ -13,6 +13,10 @@ from views.vista_productos import VistaProductos
 from views.vista_jornadas_admin import VistaJornadasAdmin
 from views.vista_monitoreo_jornadas import VistaMonitoreoJornadas
 from views.vista_modopago import VistaModoPago
+from views.repo_jornadas import VistaRepoJornadas
+from views.sectores import VistaSectoresEntradas
+from views.vista_clientes import VistaClientes
+from views.view_reporte_boleteria import ViewReporteBoleteria
 
 
 # Paleta de colores estilo Dark / Bootstrap Modern
@@ -165,6 +169,7 @@ class AdminDashboard(tk.Tk):
         menu_informes.add_command(label="Reportes Dashboard", command=lambda: self.mostrar_vista("Reportes"))
         menu_informes.add_command(label="Informes Recaudaciones", command=lambda: self.mostrar_vista("ReporteRecaudaciones"))
         menu_informes.add_command(label="Recaudación Boleterías", command=lambda: self.mostrar_vista("ReporteBoleteria"))
+        menu_informes.add_command(label="Recaudación y Jornadas", command=lambda: self.mostrar_vista("RepoJornadas"))
 
         # 5. Administración
         mb_admin, menu_admin = self._crear_menubutton_nav(navbar, "Administración ▾")
@@ -257,6 +262,19 @@ class AdminDashboard(tk.Tk):
             vista = VistaPuntosVenta(self.area_trabajo)
             vista.pack(fill="both", expand=True)
 
+        elif nombre_vista == "Sectores":
+            vista = VistaSectoresEntradas(self.area_trabajo)
+            vista.pack(fill="both", expand=True)
+
+        elif nombre_vista == "Clientes":
+            vista = VistaClientes(self.area_trabajo)
+            vista.pack(fill="both", expand=True)
+
+        elif nombre_vista == "ReporteBoleteriaCompacto":
+            vista = ViewReporteBoleteria(self.area_trabajo)
+            vista.pack(fill="both", expand=True)
+        
+
         # ... otros controles de vistas (jornadas, puntos de venta, etc.) ...
         
         elif nombre_vista == "Productos":
@@ -276,6 +294,10 @@ class AdminDashboard(tk.Tk):
         elif nombre_vista.lower() in ["monitoreo_jornadas", "monitoreo"]:
             vista = VistaMonitoreoJornadas(self.area_trabajo)
             vista.pack(fill="both", expand=True)
+
+        elif nombre_vista in ["Reportes", "RepoJornadas", "admin_reportes"]:
+            self.vista_actual = VistaRepoJornadas(self.area_trabajo)
+            self.vista_actual.pack(fill="both", expand=True)
 
         elif nombre_vista == "Inicio":
             self._vista_bienvenida()

@@ -5,8 +5,8 @@ from utils.network import obtener_mac_local
 
 
 def iniciar_sesion(usuario, password):
-    """Valida credenciales, asignación de equipo (MAC), permisos,
-
+    """
+    Valida credenciales, asignación de equipo (MAC), permisos,
     jornada activa y estado de caja en la tabla jornadas_puntos.
     """
     conexion = conectar()
@@ -37,7 +37,7 @@ def iniciar_sesion(usuario, password):
             return None, "El usuario se encuentra inactivo."
 
         # ==========================================================
-        # CASO ADMINISTRADOR (Acceso directo)
+        # CASO ADMINISTRADOR (Acceso directo sin caja)
         # ==========================================================
         rol_limpio = (user["rol"] or "").strip().lower()
         if rol_limpio in ["administrador", "admin"]:
@@ -50,6 +50,7 @@ def iniciar_sesion(usuario, password):
                 "idpunto": None,
                 "punto": None,
                 "idjornada": None,
+                "nombre_jornada": None
             }
             return datos_sesion, None
 
@@ -66,11 +67,7 @@ def iniciar_sesion(usuario, password):
         punto = cursor.fetchone()
 
         if not punto:
-            return (
-                None,
-                f"Este equipo (MAC: {equipo_mac}) no está habilitado como"
-                " punto de venta.",
-            )
+            return None, f"Este equipo (MAC: {equipo_mac}) no está habilitado como punto de venta."
 
         # ==========================================================
         # 3️⃣ VALIDAR PERMISO USUARIO ↔ PUNTO DE VENTA
@@ -85,10 +82,7 @@ def iniciar_sesion(usuario, password):
         cursor.execute(sql_permiso, (user["idusuarios"], punto["idpunto"]))
 
         if not cursor.fetchone():
-            return (
-                None,
-                "Usuario no autorizado para operar en este punto de venta.",
-            )
+            return None, "Usuario no autorizado para operar en este punto de venta."
 
         # ==========================================================
         # 4️⃣ VALIDAR JORNADA ACTIVA GENERAL
@@ -103,13 +97,7 @@ def iniciar_sesion(usuario, password):
         jornada = cursor.fetchone()
 
         if not jornada:
-            return (
-                None,
-                (
-                    "No hay ninguna jornada activa en el sistema. Contacte a"
-                    " un Administrador."
-                ),
-            )
+            return None, "No hay ninguna jornada activa en el sistema. Contacte a un Administrador."
 
         idjornada = jornada["idjornada"]
 
@@ -126,24 +114,12 @@ def iniciar_sesion(usuario, password):
         caja = cursor.fetchone()
 
         if not caja:
-            return (
-                None,
-                (
-                    "El punto de venta no tiene un estado asignado para la"
-                    " jornada actual."
-                ),
-            )
+            return None, "El punto de venta no tiene un estado asignado para la jornada actual."
 
         estado_caja = (caja["estado"] or "").strip().lower()
 
         if estado_caja == "cerrado":
-            return (
-                None,
-                (
-                    "❌ La caja ya fue cerrada para esta jornada. No puede volver"
-                    " a operar."
-                ),
-            )
+            return None, "❌ La caja ya fue cerrada para esta jornada. No puede volver a operar."
 
         # ==========================================================
         # SESIÓN COMPLETADA EXITOSAMENTE
