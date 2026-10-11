@@ -1,0 +1,8 @@
+-- 1. Crear el usuario 'inclub' que acepte conexiones desde cualquier IP (%)
+CREATE USER 'inclub'@'%' IDENTIFIED BY 'admin123';
+
+-- 2. Otorgar todos los privilegios únicamente sobre la base de datos 'inclub_offline'
+GRANT ALL PRIVILEGES ON inclub_offline.* TO 'inclub'@'%';
+
+-- 3. Aplicar los cambios en el servidor
+FLUSH PRIVILEGES;
