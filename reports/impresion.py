@@ -1,4 +1,6 @@
+
 # impresion.py
+
 import win32print
 import win32ui
 import win32con
@@ -8,8 +10,9 @@ from io import BytesIO
 import subprocess
 import platform
 
+
 def obtener_impresora_activa():
-    """Obtiene la impresora predeterminada o la primera disponible en el sistema."""
+    """Obtiene la impresora predeterminada o la primera disponible."""
     try:
         nombre = win32print.GetDefaultPrinter()
         if nombre:
@@ -17,66 +20,122 @@ def obtener_impresora_activa():
     except Exception:
         pass
 
-    impresoras = win32print.EnumPrinters(win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS)
-    if impresoras:
-        return impresoras[0][2]
-    
+    try:
+        impresoras = win32print.EnumPrinters(
+            win32print.PRINTER_ENUM_LOCAL
+            | win32print.PRINTER_ENUM_CONNECTIONS
+        )
+
+        if impresoras:
+            return impresoras[0][2]
+    except Exception:
+        pass
+
     return None
 
+
 def formatear_moneda(monto):
-    """Convierte un número a formato de moneda argentina/latam ($18.000)."""
+    """Convierte un número a formato de moneda $18.000."""
     val = float(monto or 0)
     return f"${val:,.0f}".replace(",", ".")
 
-def imprimir_ticket_silencioso(datos_ticket, nombre_impresora_custom=None):
+
+# ============================================================
+# IMPRESION DE TICKET DE VENTA
+# ============================================================
+
+def imprimir_ticket_silencioso(
+    datos_ticket,
+    nombre_impresora_custom=None
+):
     """
-    Imprime el ticket para 80mm con márgenes naturales y formato de moneda $18.000.
+    Imprime un ticket de venta en impresora térmica de 80 mm.
+    Mantiene el formato original de impresión gráfica.
     """
+
+    hprinter = None
+    hdc = None
+
     try:
-        nombre_impresora = nombre_impresora_custom or obtener_impresora_activa()
+        nombre_impresora = (
+            nombre_impresora_custom or obtener_impresora_activa()
+        )
 
         if not nombre_impresora:
-            print("❌ No se encontró ninguna impresora instalada en el sistema.")
+            print("No se encontró ninguna impresora instalada.")
             return False
 
-        print(f"🖨️ Enviando ticket a la impresora: '{nombre_impresora}'")
+        print(
+            f"Enviando ticket a la impresora: "
+            f"'{nombre_impresora}'"
+        )
 
         hprinter = win32print.OpenPrinter(nombre_impresora)
+
         hdc = win32ui.CreateDC()
         hdc.CreatePrinterDC(nombre_impresora)
 
         hdc.StartDoc("TicketVenta_TicketJets")
         hdc.StartPage()
 
-        # Escala según el DPI de la impresora
-        dpi_x = hdc.GetDeviceCaps(win32con.LOGPIXELSX) or 203
-        dpi_y = hdc.GetDeviceCaps(win32con.LOGPIXELSY) or 203
+        # Escala según los DPI de la impresora
+        dpi_x = hdc.GetDeviceCaps(
+            win32con.LOGPIXELSX
+        ) or 203
+
+        dpi_y = hdc.GetDeviceCaps(
+            win32con.LOGPIXELSY
+        ) or 203
 
         scale_x = dpi_x / 203.0
         scale_y = dpi_y / 203.0
 
         # Ancho imprimible
-        ancho_imprimible = hdc.GetDeviceCaps(win32con.HORZRES) or int(520 * scale_x)
+        ancho_imprimible = (
+            hdc.GetDeviceCaps(win32con.HORZRES)
+            or int(520 * scale_x)
+        )
 
         # Fuentes
         height_normal = int(32 * scale_y)
         height_destacado = int(38 * scale_y)
         height_titulo = int(46 * scale_y)
 
-        font_normal = win32ui.CreateFont({"name": "Arial", "height": height_normal, "weight": 700})
-        font_destacado = win32ui.CreateFont({"name": "Arial", "height": height_destacado, "weight": 700})
-        font_titulo = win32ui.CreateFont({"name": "Arial", "height": height_titulo, "weight": 700})
+        font_normal = win32ui.CreateFont({
+            "name": "Arial",
+            "height": height_normal,
+            "weight": 700
+        })
+
+        font_destacado = win32ui.CreateFont({
+            "name": "Arial",
+            "height": height_destacado,
+            "weight": 700
+        })
+
+        font_titulo = win32ui.CreateFont({
+            "name": "Arial",
+            "height": height_titulo,
+            "weight": 700
+        })
 
         y = int(15 * scale_y)
+
         line_height_normal = int(38 * scale_y)
         line_height_destacado = int(44 * scale_y)
         line_height_titulo = int(54 * scale_y)
 
-        # Margen izquierdo fijo para evitar desalineaciones con el borde físico
+        # Margen izquierdo
         margin_x = int(10 * scale_x)
 
-        def escribir_linea(texto, destacado=False, titulo=False, centrado=False):
+        def escribir_linea(
+            texto,
+            destacado=False,
+            titulo=False,
+            centrado=False
+        ):
             nonlocal y
+
             if titulo:
                 hdc.SelectObject(font_titulo)
                 lh = line_height_titulo
@@ -89,170 +148,410 @@ def imprimir_ticket_silencioso(datos_ticket, nombre_impresora_custom=None):
 
             if centrado:
                 size_x, _ = hdc.GetTextExtent(texto)
-                x = max(margin_x, (ancho_imprimible - size_x) // 2)
+                x = max(
+                    margin_x,
+                    (ancho_imprimible - size_x) // 2
+                )
             else:
                 x = margin_x
 
             hdc.TextOut(x, y, texto)
             y += lh
 
-        linea_separadora = "------------------------------------------------------------"
+        linea_separadora = "-" * 60
 
-        # --- CABECERA ---
-        escribir_linea("TicketJets", titulo=True, centrado=True)
-        escribir_linea("NO VALIDO COMO FACTURA", destacado=True, centrado=True)
+        # CABECERA
+        escribir_linea(
+            "TicketJets",
+            titulo=True,
+            centrado=True
+        )
+
+        escribir_linea(
+            "NO VALIDO COMO FACTURA",
+            destacado=True,
+            centrado=True
+        )
+
         escribir_linea(linea_separadora)
 
-        # --- DATOS VENTA ---
-        escribir_linea(f"Jornada: {datos_ticket['jornada']}")
-        escribir_linea(f"Venta N: {datos_ticket['idventa']}", destacado=True)
-        escribir_linea(f"Fecha: {datos_ticket['fecha_hora']}")
-        escribir_linea(f"Operador: {datos_ticket['operador']}")
+        # DATOS DE LA VENTA
+        escribir_linea(
+            f"Jornada: {datos_ticket['jornada']}"
+        )
+
+        escribir_linea(
+            f"Venta N: {datos_ticket['idventa']}",
+            destacado=True
+        )
+
+        escribir_linea(
+            f"Fecha: {datos_ticket['fecha_hora']}"
+        )
+
+        escribir_linea(
+            f"Operador: {datos_ticket['operador']}"
+        )
 
         if datos_ticket.get("es_cortesia"):
             escribir_linea(linea_separadora)
-            escribir_linea("*** VENTA DE CORTESIA ***", destacado=True, centrado=True)
-            escribir_linea(f"Auth: {datos_ticket.get('autorizado_cortesia')}")
 
-        escribir_linea(linea_separadora)
-        escribir_linea(f"Cliente: {datos_ticket['cliente']}")
-        escribir_linea(linea_separadora)
+            escribir_linea(
+                "*** VENTA DE CORTESIA ***",
+                destacado=True,
+                centrado=True
+            )
 
-        # --- PRODUCTOS ---
-        for prod in datos_ticket['detalle']:
-            escribir_linea(f"{prod['producto'][:28]}", destacado=True)
-            subtotal_str = formatear_moneda(prod['subtotal'])
-            escribir_linea(f"  {prod['cantidad']} x {subtotal_str}")
-
-        escribir_linea(linea_separadora)
-        total_str = formatear_moneda(datos_ticket['total'])
-        escribir_linea(f"TOTAL: {total_str}", titulo=True)
-        escribir_linea(linea_separadora)
-
-        # --- FORMAS DE PAGO ---
-        escribir_linea("Forma de Pago:", destacado=True)
-        for pago in datos_ticket['pagos']:
-            pago_str = formatear_moneda(pago['importe'])
-            escribir_linea(f" - {pago['modo']}: {pago_str}")
+            escribir_linea(
+                f"Auth: "
+                f"{datos_ticket.get('autorizado_cortesia')}"
+            )
 
         escribir_linea(linea_separadora)
 
-        # --- CÓDIGO QR ---
-        qr_texto = f"TicketJets | Venta:{datos_ticket['idventa']} | Total:{total_str}"
+        escribir_linea(
+            f"Cliente: {datos_ticket['cliente']}"
+        )
+
+        escribir_linea(linea_separadora)
+
+        # PRODUCTOS
+        for prod in datos_ticket["detalle"]:
+            escribir_linea(
+                f"{prod['producto'][:28]}",
+                destacado=True
+            )
+
+            subtotal_str = formatear_moneda(
+                prod["subtotal"]
+            )
+
+            escribir_linea(
+                f"  {prod['cantidad']} x {subtotal_str}"
+            )
+
+        escribir_linea(linea_separadora)
+
+        total_str = formatear_moneda(
+            datos_ticket["total"]
+        )
+
+        escribir_linea(
+            f"TOTAL: {total_str}",
+            titulo=True
+        )
+
+        escribir_linea(linea_separadora)
+
+        # FORMAS DE PAGO
+        escribir_linea(
+            "Forma de Pago:",
+            destacado=True
+        )
+
+        for pago in datos_ticket["pagos"]:
+            pago_str = formatear_moneda(
+                pago["importe"]
+            )
+
+            escribir_linea(
+                f" - {pago['modo']}: {pago_str}"
+            )
+
+        escribir_linea(linea_separadora)
+
+        # CODIGO QR
+        qr_texto = (
+            f"TicketJets | Venta:{datos_ticket['idventa']} "
+            f"| Total:{total_str}"
+        )
+
         qr = qrcode.make(qr_texto)
+
         buffer = BytesIO()
         qr.save(buffer, format="PNG")
         buffer.seek(0)
-        
-        tamano_qr_px = int(220 * scale_x)
-        img_qr = Image.open(buffer).resize((tamano_qr_px, tamano_qr_px))
 
-        qr_x1 = max(margin_x, (ancho_imprimible - tamano_qr_px) // 2)
+        tamano_qr_px = int(220 * scale_x)
+
+        img_qr = Image.open(buffer).resize(
+            (tamano_qr_px, tamano_qr_px)
+        )
+
+        qr_x1 = max(
+            margin_x,
+            (ancho_imprimible - tamano_qr_px) // 2
+        )
+
         qr_y1 = y
         qr_x2 = qr_x1 + tamano_qr_px
         qr_y2 = qr_y1 + tamano_qr_px
 
         dibujo_qr = ImageWin.Dib(img_qr)
-        dibujo_qr.draw(hdc.GetHandleOutput(), (qr_x1, qr_y1, qr_x2, qr_y2))
+
+        dibujo_qr.draw(
+            hdc.GetHandleOutput(),
+            (qr_x1, qr_y1, qr_x2, qr_y2)
+        )
+
         y += tamano_qr_px + int(20 * scale_y)
 
-        # --- PIE DE PÁGINA ---
-        escribir_linea("¡Gracias por su compra!", destacado=True, centrado=True)
-        escribir_linea("Conserve este ticket", centrado=True)
+        # PIE DE PAGINA
+        escribir_linea(
+            "¡Gracias por su compra!",
+            destacado=True,
+            centrado=True
+        )
 
-        # Avance de papel para facilitar el corte
+        escribir_linea(
+            "Conserve este ticket",
+            centrado=True
+        )
+
+        # Avance adicional de papel
         y += int(80 * scale_y)
+
         escribir_linea(".", centrado=False)
 
-        # Finalizar Trabajo
+        # FINALIZAR IMPRESION
         hdc.EndPage()
         hdc.EndDoc()
-        win32print.ClosePrinter(hprinter)
-        print("✅ Ticket impreso con formato limpio $18.000 y guiones.")
+
+        print("Ticket de venta impreso correctamente.")
         return True
 
     except Exception as e:
-        print(f"❌ Error al imprimir en segundo plano: {e}")
+        print(
+            f"Error al imprimir ticket de venta: {e}"
+        )
         return False
 
-# Impresion de tickets de cierre de caja
+    finally:
+        if hdc is not None:
+            try:
+                hdc.DeleteDC()
+            except Exception:
+                pass
+
+        if hprinter is not None:
+            try:
+                win32print.ClosePrinter(hprinter)
+            except Exception:
+                pass
 
 
-def imprimir_ticket_cierre_silencioso(datos_cierre, operador_nombre="OPERADOR"):
+# ============================================================
+# IMPRESION DE TICKET DE CIERRE DE CAJA
+# ============================================================
+
+def imprimir_ticket_cierre_silencioso(
+    datos_cierre,
+    operador_nombre="OPERADOR"
+):
     """
-    Genera e imprime el ticket de Cierre de Caja en impresoras térmicas de 80mm.
-    Ancho de línea estándar: 42 caracteres.
+    Genera e imprime el ticket de cierre de caja en impresoras
+    térmicas de 80 mm.
+
+    En Windows utiliza impresión RAW y comandos ESC/POS para
+    avanzar el papel y solicitar el corte automático.
+
+    IMPORTANTE:
+    El corte depende de que la impresora admita ESC/POS y
+    tenga una cuchilla automática habilitada.
     """
+
     ANCHO = 42
     LINEA = "-" * ANCHO
     DOBLE_LINEA = "=" * ANCHO
 
     lineas = [
-        "TicketsJets".center(ANCHO),
+        "TicketJets".center(ANCHO),
         "CIERRE DE CAJA".center(ANCHO),
         DOBLE_LINEA,
         f" FECHA: {datos_cierre['fecha_impresion']}",
-        f" PUNTO: {datos_cierre['punto'][:28]}",
-        f" OPERADOR: {operador_nombre[:25]}",
+        f" PUNTO: {str(datos_cierre['punto'])[:28]}",
+        f" OPERADOR: {str(operador_nombre)[:25]}",
         LINEA,
         " RESUMEN DE VENTAS POR PRODUCTO".center(ANCHO),
         f"{'CANT':<5} {'DESCRIPCION':<25} {'TOTAL':>10}",
         LINEA
     ]
 
-    # Detalle de productos vendidos
+    # DETALLE DE PRODUCTOS
     for p in datos_cierre.get("productos", []):
         cant = f"x{int(p['cantidad'])}"
         nombre = str(p["producto"])[:24]
-        total = f"${float(p['total_producto']):,.2f}"
-        lineas.append(f"{cant:<5} {nombre:<25} {total:>10}")
+
+        total = (
+            f"${float(p['total_producto']):,.2f}"
+        )
+
+        lineas.append(
+            f"{cant:<5} {nombre:<25} {total:>10}"
+        )
 
     lineas.append(LINEA)
-    lineas.append(" TOTALES POR MÉTODOS DE PAGO".center(ANCHO))
+    lineas.append(
+        " TOTALES POR METODOS DE PAGO".center(ANCHO)
+    )
     lineas.append(LINEA)
 
-    # Totales por método de pago
+    # TOTALES POR METODO DE PAGO
     for tp in datos_cierre.get("totales_pago", []):
         modo = str(tp["modo"])[:25]
+
         monto = f"${float(tp['total']):,.2f}"
-        lineas.append(f" {modo:<25} {monto:>14}")
+
+        lineas.append(
+            f" {modo:<25} {monto:>14}"
+        )
 
     lineas.append(DOBLE_LINEA)
-    
-    # Total General
-    total_str = f"${datos_cierre['total_general']:,.2f}"
-    lineas.append(f" TOTAL GENERAL:{total_str:>27}")
+
+    # TOTAL GENERAL
+    total_str = (
+        f"${float(datos_cierre['total_general']):,.2f}"
+    )
+
+    lineas.append(
+        f" TOTAL GENERAL:{total_str:>27}"
+    )
+
     lineas.append(DOBLE_LINEA)
-    lineas.append("\n\n\n\n")  # Avance de papel para corte manual o automático
 
-    texto_ticket = "\n".join(lineas)
+    # SALTOS DE LINEA ANTES DEL CORTE
+    # Se agregan líneas reales para que el papel salga
+    # suficientemente antes de activar la cuchilla.
+    lineas.extend(["", "", "", "", ""])
 
-    # Imprimir según el sistema operativo
+    texto_ticket = "\n".join(lineas) + "\n"
+
+    # COMANDOS ESC/POS
+    INICIALIZAR = b"\x1b\x40"
+
+    # Avanzar cinco líneas adicionales
+    AVANZAR_PAPEL = b"\x1b\x64\x05"
+
+    # Corte parcial estándar ESC/POS
+    CORTE_PARCIAL = b"\x1d\x56\x01"
+
     sistema = platform.system()
+
     try:
         if sistema == "Windows":
-            import win32print
-            import win32ui
 
-            printer_name = win32print.GetDefaultPrinter()
-            hprinter = win32print.OpenPrinter(printer_name)
+            printer_name = obtener_impresora_activa()
+
+            if not printer_name:
+                return (
+                    False,
+                    "No se encontró ninguna impresora instalada."
+                )
+
+            hprinter = win32print.OpenPrinter(
+                printer_name
+            )
+
             try:
-                # Envío directo RAW a la impresora térmica
-                win32print.StartDocPrinter(hprinter, 1, ("Ticket_Cierre", None, "RAW"))
-                win32print.StartPagePrinter(hprinter)
-                win32print.WritePrinter(hprinter, texto_ticket.encode("latin-1", errors="replace"))
-                win32print.EndPagePrinter(hprinter)
-                win32print.EndDocPrinter(hprinter)
+                win32print.StartDocPrinter(
+                    hprinter,
+                    1,
+                    ("Ticket_Cierre", None, "RAW")
+                )
+
+                try:
+                    win32print.StartPagePrinter(
+                        hprinter
+                    )
+
+                    # Inicializar la impresora
+                    win32print.WritePrinter(
+                        hprinter,
+                        INICIALIZAR
+                    )
+
+                    # Enviar texto del cierre
+                    # cp850 es habitual en impresoras térmicas.
+                    datos_bytes = texto_ticket.encode(
+                        "cp850",
+                        errors="replace"
+                    )
+
+                    win32print.WritePrinter(
+                        hprinter,
+                        datos_bytes
+                    )
+
+                    # Avance adicional antes del corte
+                    win32print.WritePrinter(
+                        hprinter,
+                        AVANZAR_PAPEL
+                    )
+
+                    # Solicitar corte automático
+                    win32print.WritePrinter(
+                        hprinter,
+                        CORTE_PARCIAL
+                    )
+
+                finally:
+                    win32print.EndPagePrinter(
+                        hprinter
+                    )
+
+                win32print.EndDocPrinter(
+                    hprinter
+                )
+
             finally:
-                win32print.ClosePrinter(hprinter)
+                win32print.ClosePrinter(
+                    hprinter
+                )
 
         else:
-            # En Linux / macOS usa 'lpr'
-            process = subprocess.Popen(["lpr"], stdin=subprocess.PIPE)
-            process.communicate(texto_ticket.encode("latin-1", errors="replace"))
+            # Linux / macOS
+            # La cola de impresión debe permitir modo RAW.
+            process = subprocess.Popen(
+                ["lpr", "-o", "raw"],
+                stdin=subprocess.PIPE
+            )
 
-        return True, "Ticket de Cierre impreso correctamente."
+            datos_bytes = (
+                INICIALIZAR
+                + texto_ticket.encode(
+                    "cp850",
+                    errors="replace"
+                )
+                + AVANZAR_PAPEL
+                + CORTE_PARCIAL
+            )
+
+            _, _ = process.communicate(
+                datos_bytes
+            )
+
+            if process.returncode != 0:
+                raise RuntimeError(
+                    "La cola de impresión devolvió el código "
+                    f"{process.returncode}"
+                )
+
+        print(
+            "Ticket de cierre enviado correctamente "
+            "con comando de corte."
+        )
+
+        return (
+            True,
+            "Ticket de Cierre impreso correctamente."
+        )
 
     except Exception as e:
-        print(f"❌ Error al imprimir ticket de cierre: {e}")
-        return False, f"Error al imprimir: {e}"
+        print(
+            f"Error al imprimir ticket de cierre: {e}"
+        )
+
+        return (
+            False,
+            f"Error al imprimir: {e}"
+        )
